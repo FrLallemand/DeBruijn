@@ -1,0 +1,7 @@
+[package]
+name = "de_bruijn"
+version = "0.1.0"
+authors = ["François Lallemand <frlallemand@protonmail.com>"]
+
+[dependencies]
+dot = "0.1.3"
