@@ -1,136 +1,150 @@
 use std::env;
 use std::io::Write;
 type Edge = (usize,usize,usize, isize);
-type Graph = Vec<Edge>;
-
-pub fn new_de_bruijn_graph(neighborhood: usize, nb_states: usize) -> Graph {
-    let nb_nodes = nb_states.pow((neighborhood-1) as u32);
-    let mut graph = vec![(0, 0, 0, -1) ;(nb_nodes * nb_states)];
-    for i in 0..nb_nodes {
-        for j in 0..nb_states {
-            let index = i*nb_states + j;
-            graph[index] = (i, index % nb_nodes, j, -1);
-        }
-    }
-    graph
+//sortant et entrant
+type Node = Vec<usize>;
+struct Graph {
+    edges: Vec<Edge>,
+    nodes: Vec<Node>,
+    neighborhood: usize,
+    nb_states: usize,
+    nb_nodes: usize
 }
 
-pub fn render_to<W: Write>(graph: &Graph, base: usize, output: &mut W) {
-    write!(output, "digraph deBruijn {{").unwrap();
-    for edge in graph {
-        //write!(output, "\t{} -> {} [label={}]", to_str_with_base(edge.0, base), to_str_with_base(edge.1, base), edge.3).unwrap();
-        write!(output, "\t{} -> {} [label={}]", edge.0, edge.1, edge.3).unwrap();
-    }
-    write!(output, "}}").unwrap();
-}
-
-pub fn order_maximise_cycle(graph: &mut Graph, nb_states: usize){
-    let mut edges_in_cycle: usize = 0;
-    let mut next: isize = 0;
-    for i in 1..(graph.len()){
-    find_cycle_at_size(graph, &mut next, &mut edges_in_cycle, i, nb_states);
-
-    }
-    //println!("{:?}", graph);
-
-}
-
-fn find_cycle_at_size(graph: &mut Graph, next: &mut isize, edges_in_cycle: &mut usize, edges_to_add:  usize, nb_states: usize) -> bool{
-    let mut success = false;
-    for i in 0..graph.len(){
-        if graph[i].3 == -1 {
-            graph[i].3 = *next;
-            *next+=1;
-            if *edges_in_cycle == 8 && edges_to_add == 2{
-                println!("{:?} {:?} {:?}", graph[i], i,  edges_to_add);
-            }
-
-            if edges_to_add > 1 {
-
-                let next_success = find_cycle_at_size(graph, next, edges_in_cycle, edges_to_add-1, nb_states);
-                if !next_success {
-                    graph[i].3 = -1;
-                    *next-=1;
-                }
-           } else {
-                let new_edges_in_cycles = nb_edges_in_cycle(graph, nb_states);
-
-                if new_edges_in_cycles > *edges_in_cycle {
-                    *edges_in_cycle = new_edges_in_cycles;
-                    success = true;
-                } else {
-                    graph[i].3 = -1;
-                    *next-=1;
-                }
+impl Graph {
+    pub fn new(neighborhood: usize, nb_states: usize) -> Graph {
+        let nb_nodes = nb_states.pow((neighborhood-1) as u32);
+        let mut edges = vec![(0, 0, 0, -1) ;(nb_nodes * nb_states)];
+        let mut nodes = vec![Vec::with_capacity(nb_states); nb_nodes];
+        for i in 0..nb_nodes {
+            for j in 0..nb_states {
+                let index = i*nb_states + j;
+                edges[index] = (i, index % nb_nodes, j, -1);
+                nodes[i].push(index);
             }
         }
+
+        Graph{edges, nodes, neighborhood, nb_states, nb_nodes}
     }
-    success
-}
 
-fn nb_edges_in_cycle(graph: &mut Graph, nb_states: usize) -> usize{
-    let mut total = 0;
-    let reachabilities = reachability(graph);
-    for i in 0..reachabilities.len(){
-        for j in 0..reachabilities.len(){
-            println!("{:?} {:?}", i*nb_states + j, graph.len());
-
-            if i*nb_states + j < graph.len() && graph[i*nb_states + j].3 > -1 && reachabilities[j][i]{
-                total+=1;
-            }
+    pub fn render_to<W: Write>(&self, output: &mut W) {
+        write!(output, "digraph deBruijn {{").unwrap();
+        for edge in &self.edges {
+            //write!(output, "\t{} -> {} [label={}]", to_str_with_base(edge.0, base), to_str_with_base(edge.1, base), edge.3).unwrap();
+            write!(output, "\t{} -> {} [label={}]", edge.0, edge.1, edge.3).unwrap();
         }
+        write!(output, "}}").unwrap();
     }
-    /*
-    if graph[0].3 == 0 && graph[2].3 == -1 && graph[1].3 == 1{
-        //println!("{:?} {:?}", graph, total);
-        //println!("{:?}", reachabilities);
-        let size = graph[graph.len()-1].0 +1;
-        let mut r = vec![vec![false ;size] ; size];
 
-        for edge in graph.iter_mut() {
+
+    fn reachability(&mut self) -> Vec<Vec<bool>>{
+        let size = self.nb_nodes;
+        let mut reachability = vec![vec![false; size]; size];
+
+        for edge in &self.edges{
             if edge.3 > -1 {
-                r[edge.0][edge.1] = true;
+                reachability[edge.0][edge.1] = true;
             }
         }
-        //println!("{:?}", r);
-
-    }*/
-    total
-}
-
-fn reachability(graph: &mut Graph) -> Vec<Vec<bool>>{
-    //let size = graph[graph.len()-1].0 +1;
-    let size = graph[graph.len()-1].0 +1;
-    let mut reachability = vec![vec![false ;size] ; size];
-
-    for edge in graph.iter_mut() {
-        if edge.3 > -1 {
-            reachability[edge.0][edge.1] = true;
-        }
-    }
-
-    let mut changed = true;
-    while(changed){
-        changed = false;
-        for i in 0..size {
-            for j in 0..size {
-                if !reachability[i][j] {
-                    for (index, edge) in graph.iter().enumerate() {
-                        for (index2, edge2) in graph.iter().enumerate() {
-                            if((edge.0 == i) && (edge.1 == edge2.0) && (edge2.1 == j)) &&
-                                (reachability[i][edge.1] && reachability[edge.1][j]) {
-                                    reachability[i][j] = true;
-                                    changed = true;
-                                    break;
-                                }
+        let mut changed = true;
+        while(changed){
+            changed = false;
+            for i in 0..size {
+                for j in 0..size {
+                    if !reachability[i][j] {
+                        for (index, edge) in self.edges.iter().enumerate() {
+                            let mut found_path = false;
+                            let mut found_opposite = false;
+                            for (index2, edge2) in self.edges.iter().enumerate() {
+                                if((edge.0 == i) && (edge.1 == edge2.0) && (edge2.1 == j)) &&
+                                    (reachability[i][edge.1] && reachability[edge.1][j]) {
+                                        reachability[i][j] = true;
+                                        changed = true;
+                                        found_path = true;
+                                        break;
+                                    }
+                            }
                         }
                     }
                 }
             }
         }
+        reachability
     }
-    reachability
+
+    fn nb_edges_in_cycle(&mut self) -> usize{
+        let mut total = 0;
+        let reachabilities = self.reachability();
+        for i in 0..reachabilities.len(){
+            for j in 0..reachabilities.len(){
+                //println!("{:?}", );
+                // j peut atteindre i
+                if reachabilities[j][i]{
+                    // on prend le noeud d'index i et on regarde ses arêtes sortantes
+                    //println!("{:?}", self.nodes[i]);
+
+                    for index in self.nodes[i].iter() {
+                        if self.edges[*index].1==j && self.edges[*index].3 > -1 {
+                            //println!("{:?} {:?}", edge, graph[reachabilities[j][i].1 as usize]);
+                            total +=1;
+                        }
+                    }
+                }
+            }
+        }
+        total
+    }
+
+    pub fn order_maximise_cycle(&mut self){
+        let mut edges_in_cycle: usize = 0;
+        let mut next: isize = 0;
+
+        for i in 1..self.edges.len()+1{
+            self.find_cycle_at_size(&mut next, &mut edges_in_cycle, i);
+        }
+
+       // self.find_cycle_at_size(&mut next, &mut edges_in_cycle, 1);
+        //self.find_cycle_at_size(&mut next, &mut edges_in_cycle, 2);
+        //self.find_cycle_at_size(&mut next, &mut edges_in_cycle, 3);
+        //self.find_cycle_at_size(&mut next, &mut edges_in_cycle, 4);
+
+        println!("{:?}", self.edges);
+
+    }
+
+
+    fn find_cycle_at_size(&mut self, next: &mut isize, edges_in_cycle: &mut usize, edges_to_add:  usize) -> bool{
+        let mut success = false;
+
+        // pour toutes les arêtes qui ne sont pas définies
+        for i in 0..self.edges.len(){
+            if self.edges[i].3 == -1 {
+                self.edges[i].3 = *next;
+                *next+=1;
+                if edges_to_add > 1 {
+                    let next_success = self.find_cycle_at_size(next, edges_in_cycle, edges_to_add-1);
+                    if !next_success {
+                        self.edges[i].3 = -1;
+                        *next-=1;
+                    }
+                } else {
+                    let new_edges_in_cycles = self.nb_edges_in_cycle();
+                    if new_edges_in_cycles > *edges_in_cycle {
+                        *edges_in_cycle = new_edges_in_cycles;
+                        success = true;
+                    } else {
+                        self.edges[i].3 = -1;
+                        *next-=1;
+                    }
+                }
+            } else if edges_to_add > 1 {
+                success = true;
+            }
+        }
+        success
+    }
 }
+
 
 fn to_str_with_base(mut num: usize, base: usize) -> String {
     let chars: Vec<char> = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ".chars().collect();
@@ -143,6 +157,7 @@ fn to_str_with_base(mut num: usize, base: usize) -> String {
     s.chars().rev().collect()
 }
 
+/*
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -185,6 +200,7 @@ mod tests {
     }
 
 }
+ */
 
 fn main() {
     let args : Vec<String> = env::args().collect();
@@ -194,24 +210,14 @@ fn main() {
     let neighborhood = args[1].parse::<usize>().expect("Unable to parse first argument ");
     let nb_states = args[2].parse::<usize>().expect("Unable to parse first argument ");
 
-    let mut graph = new_de_bruijn_graph(neighborhood, nb_states);
-
-    //println!("{:?}",  reachability(&mut graph));
-    order_maximise_cycle(&mut graph, nb_states);
-    //println!("{:?}",  graph);
+    // let mut graph = new_de_bruijn_graph(neighborhood, nb_states);
+    let mut graph = Graph::new(neighborhood, nb_states);
+    //println!("{:?}",  graph.edges);
+    graph.order_maximise_cycle();
+    //println!("{:?}",  graph.nb_edges_in_cycle());
 
     use std::fs::File;
     let mut f = File::create("test.dot").unwrap();
-    render_to(&graph, nb_states, &mut f);
+    graph.render_to(&mut f);
 
-   // let mut graph = new_de_bruijn_graph(neighborhood, nb_states);
-   // reachability(&mut graph);
-
-
-    /*
-    use std::fs::File;
-    let mut f = File::create("test.dot").unwrap();
-    render_to(&graph, nb_states, &mut f);
-    */
-    //graph.order_maximise_cycle();
 }
